@@ -1,0 +1,515 @@
+---
+title: "Project 2"
+author: "Yusi"
+date: "3/8/2020"
+output: html_document
+---
+
+
+#IBM HR anaytic employee
+```{r}
+##install.packages("MASS",dependencies = TRUE, repos = "http://cran.us.r-project.org")
+library(tidyverse)
+library(MASS)
+library(caret)
+library(car)
+library(randomForest)
+library(cowplot)
+library(corrplot)
+library(leaps)
+library(e1071)
+
+```
+
+
+```{r}
+#load the dateset
+IBMemployee.df <- read.csv ("https://raw.githubusercontent.com/BivinSadler/MSDS_6306_Doing-Data-Science/Master/Unit%2014%20and%2015%20Case%20Study%202/CaseStudy2-data.csv", sep= ",", header= TRUE)
+IBMemployee.df
+
+#take a look of the dataset
+str(IBMemployee.df)
+head(IBMemployee.df)
+summary(IBMemployee.df)
+#looks like there are three category is not relateble.(EmployeeCount, Over18, Standardhour), we will remove it from dataset.
+IBMemployee.df [IBMemployee.df$EmployeeCount!=1,]
+IBMemployee.df [IBMemployee.df$Over18 != "Y",]
+IBMemployee.df [IBMemployee.df$StandardHours!= 80,]
+IBMemp.df<- IBMemployee.df %>% dplyr::select(
+  Age,
+  Attrition,
+  BusinessTravel,
+  DailyRate,
+  Department,
+  DistanceFromHome,
+  Education,
+  EducationField,
+  EnvironmentSatisfaction,
+  Gender,
+  HourlyRate,
+  JobInvolvement,
+  JobLevel,
+  JobRole,
+  JobSatisfaction,
+  MaritalStatus,
+  MonthlyIncome,
+  MonthlyRate,
+  NumCompaniesWorked,
+  OverTime,
+  PercentSalaryHike,
+  PerformanceRating,
+  RelationshipSatisfaction,
+  StockOptionLevel,
+  TotalWorkingYears,
+  TrainingTimesLastYear,
+  WorkLifeBalance,
+  YearsAtCompany,
+  YearsInCurrentRole,
+  YearsSinceLastPromotion,
+  YearsWithCurrManager
+)
+IBMemp.df
+summary(IBMemp.df)
+#checking missing value
+sapply(IBMemp.df, function(x) sum(is.na(x)))
+#there is no missing values.
+
+```
+```{r}
+#changing the class of variable from numeric to factor
+IBMemp.df$Education<-factor(IBMemp.df$Education)
+IBMemp.df$EnvironmentSatisfaction<- factor(IBMemp.df$EnvironmentSatisfaction)
+IBMemp.df$JobInvolvement<-factor(IBMemp.df$JobInvolvement)
+IBMemp.df$JobLevel<-factor(IBMemp.df$JobLevel)
+IBMemp.df$JobSatisfaction<-factor(IBMemp.df$JobSatisfaction)
+IBMemp.df$PerformanceRating<-factor(IBMemp.df$PerformanceRating)
+IBMemp.df$RelationshipSatisfaction<- factor(IBMemp.df$RelationshipSatisfaction)
+IBMemp.df$StockOptionLevel<-factor(IBMemp.df$StockOptionLevel)
+IBMemp.df$WorkLifeBalance<- factor(IBMemp.df$WorkLifeBalance)
+
+```
+
+```{r}
+numeric.va<- sapply(IBMemp.df, is.numeric)
+corr.matrix <- cor(IBMemp.df[,numeric.va])
+corrplot(corr.matrix, main='Correaltion plot for numeric variables', method= "number")
+#result of this correlation plot:
+#Age variable is correlated with TotalWorkingYears
+#TotalWorkingYears correlated with MonthlyIncome
+#YearsWithCurrManager also correlated with YearsAtCompany
+#YearsWithCurrManger correlated with YearsInCurrentRole
+#YearsInCurrentRole correlated with YearsAtCompany
+
+#There is some confusion about monthlyrate,dailyrate, hourlyrateand monthlyincome so I will do a plot and see if they are any important to be discovered.
+cor.test(IBMemp.df$MonthlyRate, IBMemp.df$HourlyRate)
+#result is r value is -0.01603517, correlation is between -1 to 1. So no evidence to prove there is a correaltion between hourly rate to monthly rate.
+cor.test(IBMemp.df$MonthlyRate, IBMemp.df$DailyRate)
+#r value is -0.02764077, there is no evidene to prove monthly rate has correlatin to daily rate.
+cor.test(IBMemp.df$DailyRate, IBMemp.df$HourlyRate)
+#r value is 0.04849597, there is not strong evidence to prove there is correlation between daily rate and hourly rate.
+cor.test(IBMemp.df$MonthlyIncome,IBMemp.df$MonthlyRate)
+#r value is 0.06459407, there is not strong evidence to prove there is correlation between monthly income to monthly rate
+cor.test(IBMemp.df$MonthlyIncome, IBMemp.df$HourlyRate)
+#r value is 0.002391151, there is no eivdence show that there is correlation between Monthly income and hourly rate.
+cor.test(IBMemp.df$MonthlyIncome, IBMemp.df$DailyRate)
+#r value is 0.00008790339, there is no evidence to shwo that there is correlation between monthly income and daily rate.
+
+boxplot(IBMemp.df$MonthlyIncome ~ IBMemp.df$Attrition,
+        main = "Monthly Income by Attrition",
+        horizontal = T,
+        xlab = "Dollars" )
+boxplot(IBMemp.df$MonthlyRate ~ IBMemp.df$Attrition,
+        main= "Monthly rate by Attrition",
+        horizontal = T,
+        xlab = "Dollars")
+boxplot(IBMemp.df$DailyRate ~ IBMemp.df$Attrition,
+        main= "Daily rate by Attrition",
+        horizontal = T,
+        xlab = "Dollars")
+boxplot(IBMemp.df$HourlyRate ~ IBMemp.df$Attrition,
+        main= "Hourly rate by Attrition",
+        horizontal = T,
+        xlab = "Dollars")
+pairs(~MonthlyIncome + HourlyRate + DailyRate + MonthlyRate,
+            data = IBMemp.df,
+            main = "Scatterplot for combination")
+
+str(IBMemp.df)
+```
+# I do not see a correlation between monthly rate and daily rate and hour rate to monthly income, so these will not be included in the analysis. 
+
+```{r}
+IBMemp.df$JobLevel <- as.numeric(IBMemp.df$JobLevel)
+cor.test(IBMemp.df$MonthlyIncome, IBMemp.df$JobLevel)
+cor.test(IBMemp.df$MonthlyIncome, IBMemp.df$TotalWorkingYears)
+```
+
+# correlation between monthly income to job level is 0.9516, between monthly income to total working years = 0.7785.
+
+
+
+#Checking the p-value for each variables.
+```{r}
+IBMemp.lm <-lm(MonthlyIncome ~ ., data = IBMemp.df)
+summary(IBMemp.lm)
+vif(IBMemp.lm)
+```
+#run the model, linear regression.
+```{r}
+trainControl(method = "cv", number = 4) -> train.cv
+train(MonthlyIncome ~ .,
+  data = IBMemp.df,
+  method = "lmStepAIC",
+  trControl = train.cv
+) -> IBM_salary.step
+summary(IBM_salary.step)
+IBM_salary.step$results
+
+```
+
+# Monthly income prediction model
+```{r}
+str(IBMemp.df)
+IBMemp.df$Monthlyincomelm <- predict(IBM_salary.step, newdata= IBMemp.df) 
+RMSE(IBMemp.df$Monthlyincomelm, IBMemp.df$MonthlyIncome)/mean(IBMemp.df$MonthlyIncome)
+
+```
+# RMSE 0.154
+
+# Run the prediction data
+```{r}
+predictmonthlyincome<- read_excel("/Users/yusi/Downloads/CaseStudy2CompSet No Salary.xlsx")
+predictmonthlyincoreame
+str(predictmonthlyincome)
+head(predictmonthlyincome)
+predictmonthlyincome$Education<-factor(predictmonthlyincome$Education)
+predictmonthlyincome$EnvironmentSatisfaction<- factor(predictmonthlyincome$EnvironmentSatisfaction)
+predictmonthlyincome$JobInvolvement<-factor(predictmonthlyincome$JobInvolvement)
+predictmonthlyincome$JobLevel<-factor(predictmonthlyincome$JobLevel)
+predictmonthlyincome$JobSatisfaction<-factor(predictmonthlyincome$JobSatisfaction)
+predictmonthlyincome$PerformanceRating<-factor(predictmonthlyincome$PerformanceRating)
+predictmonthlyincome$RelationshipSatisfaction<- factor(predictmonthlyincome$RelationshipSatisfaction)
+predictmonthlyincome$StockOptionLevel<-factor(predictmonthlyincome$StockOptionLevel)
+predictmonthlyincome$WorkLifeBalance<- factor(predictmonthlyincome$WorkLifeBalance)
+predictmonthlyincome$MonthlyIncomeLM <- predict(IBM_salary.step, newdata = predictmonthlyincome)
+
+predictmonthlyincome
+load("workspace.RData")
+```
+
+```{r}
+boxplot(IBMemp.df$MonthlyIncome ~ IBMemp.df$PerformanceRating)
+```
+# This is the boxplot for performance rating between excellent as 3 oustanding as 4. It doesnt have much impact on monthly income or attrition. 
+#After data cleaning, build the new dataframe. 
+```{r}
+IBMclean.df <- IBMemp.df %>% dplyr::select(
+  MonthlyIncome,
+  Attrition,
+  Age,
+  BusinessTravel,
+  Department,
+  DistanceFromHome,
+  Education,
+  EducationField,
+  EnvironmentSatisfaction,
+  Gender,
+  JobInvolvement,
+  JobLevel,
+  JobRole,
+  JobSatisfaction,
+  MaritalStatus,
+  NumCompaniesWorked,
+  OverTime,
+  PercentSalaryHike,
+  RelationshipSatisfaction,
+  StockOptionLevel,
+  TotalWorkingYears,
+  TrainingTimesLastYear,
+  WorkLifeBalance,
+  YearsAtCompany,
+  YearsInCurrentRole,
+  YearsSinceLastPromotion,
+  YearsWithCurrManager,
+  PerformanceRating
+)
+```
+## Including Plots
+
+#Plot histogram for all numeric variables
+
+```{r}
+IBMclean.df %>% keep(is.numeric) %>% gather %>% ggplot(aes(x= value))+ facet_wrap(~key, scales = "free")+
+  geom_histogram()
+                     
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+# Age is more or less normally distributed.
+# Distance from Home, Num of Companies worked and Total working Years is right skewed and should be transformed to curb the skewness.
+# MonthlyIncome, PercentSalatyHike, Yearatcompany, Yearsincurrentrole, years since last promotion, years with current managers all are right skewed and need transformed to meet the assumption.
+
+
+#Employee Personal Demographics 
+```{r}
+p1<- IBMclean.df %>%
+  group_by(Gender) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(Gender), y = counts)) + geom_bar(stat = 'identity', fill = "red") + ggtitle("Gender") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 900))
+
+p2<- IBMclean.df %>%
+  group_by(Education) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(Education), y = counts)) + geom_bar(stat = 'identity', fill = "blue") + ggtitle("Education") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 650))
+
+p3 <- IBMclean.df %>%
+  group_by(EducationField) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(EducationField), y = counts)) + geom_bar(stat = 'identity', fill = "yellow") + ggtitle("Education Field") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 650))
+
+p4 <- IBMclean.df %>%
+  group_by(MaritalStatus) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(MaritalStatus), y = counts)) + geom_bar(stat = 'identity', fill = "green")+ ggtitle("Marital Status") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 750))
+
+p5 <- IBMclean.df %>%
+  group_by(RelationshipSatisfaction) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(RelationshipSatisfaction), y = counts)) + geom_bar(stat = 'identity', fill = "coral1") + ggtitle("Relationship Satisfaction") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())+ scale_y_continuous(limits = c(0, 500))
+
+p6 <- IBMclean.df %>%
+  group_by(WorkLifeBalance) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(WorkLifeBalance), y = counts)) + geom_bar(stat = 'identity', fill = "purple")+ ggtitle("Work Life Balance") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 950))
+
+grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 2, ncol = 3)
+
+```
+# More than 50% of Male employees
+#Education: 1 'Below College 2 'College' 3 'Bachelor' 4 'Master' 5 'Doctor'; majority employees has bachelor degree, second one is master degree.
+# More than 75% of employees are from life science or medical education backgroud. 
+# 45% of employees are married. 
+# Realtionship Satisfaction: 1 'Low' 2 'Medium' 3 'High' 4 'Very High'. 
+# 1 'Bad' 2 'Good' 3 'Better' 4 'Best'; looks like majority of employees think they have a better work like balance in IBM.
+
+# Work Demographics 
+```{r}
+p1 <- IBMclean.df %>%
+  group_by(BusinessTravel) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(BusinessTravel), y = counts)) + geom_bar(stat = 'identity', fill = "red") + ggtitle("Business Travel") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ theme(plot.title = element_text(size =10),axis.text.x = element_text(size =10,angle = 45, hjust = 1),axis.title.x=element_blank())+ scale_y_continuous(limits = c(0, 1100))
+
+
+
+p2 <- IBMclean.df %>%
+  group_by(EnvironmentSatisfaction) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(EnvironmentSatisfaction), y = counts)) + geom_bar(stat = 'identity', fill = "green") + ggtitle("Environment Satisfaction") + geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =10,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 500))
+
+p3 <- IBMclean.df %>%
+  group_by(JobInvolvement) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(JobInvolvement), y = counts)) + geom_bar(stat = 'identity', fill = "blue") + ggtitle("Job Involvement") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ theme(plot.title = element_text(size =10),axis.text.x = element_text(size =10,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 900))
+
+
+p4 <- IBMclean.df %>%
+  group_by(JobSatisfaction) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(JobSatisfaction), y = counts)) + geom_bar(stat = 'identity', fill = "purple") + ggtitle("Job Satisfaction") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 500))
+
+p5 <- IBMclean.df %>%
+  group_by(OverTime) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(OverTime), y = counts)) + geom_bar(stat = 'identity', fill = "coral1") + ggtitle("Over Time") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) + scale_y_continuous(limits = c(0, 1100))
+
+
+p6 <- IBMclean.df %>%
+  group_by(Department) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(Department), y = counts)) + geom_bar(stat = 'identity', fill = "grey") + ggtitle("Department") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ theme(plot.title = element_text(size =10),axis.text.x = element_text(size = 7, angle = 45, hjust = 1),axis.title.x=element_blank())
+
+p7 <- IBMclean.df %>%
+  group_by(JobRole) %>%
+  summarise(counts = n()) %>%
+  ggplot(aes(x = as.factor(JobRole), y = counts)) + geom_bar(stat = 'identity', fill = "red") + ggtitle("Job Role") +geom_text(aes(label=counts), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25) + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,nrow = 2)
+```
+#Now let's take a look of the realtionship to attrtion.
+```{r}
+p1 <- IBMclean.df %>%
+  ggplot(aes(x = Age, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Age") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+p2 <- IBMclean.df %>%
+  ggplot(aes(x = DistanceFromHome, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Distance From Home")  + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+p3 <- IBMclean.df %>%
+  ggplot(aes(x = NumCompaniesWorked, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Number of Companies")  + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+p4 <- IBMclean.df %>%
+  ggplot(aes(x = TotalWorkingYears, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Total Working Years")  + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+
+```
+# Younger employees between 25- 35 years old have a hight attrition rate.
+# Attrtion rate is lower when distance from home is within 10 miles.
+# Attrtion rate is higher when employees have total working years between 0.7 years. 
+
+```{r}
+
+p1 <- IBMclean.df %>%
+  ggplot(aes(x = MonthlyIncome, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Monthly Income") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+
+p2 <- IBMclean.df %>%
+  ggplot(aes(x = PercentSalaryHike, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Percentage Salary Hike") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+
+p3 <- IBMclean.df %>%
+  ggplot(aes(x = YearsAtCompany, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Years At Company") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+
+p4 <- IBMclean.df %>%
+  ggplot(aes(x = YearsInCurrentRole, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Years in Current Role") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+
+p5 <- IBMclean.df %>%
+  ggplot(aes(x = YearsSinceLastPromotion, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Years Since Last Promotion") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+
+p6 <- IBMclean.df %>%
+  ggplot(aes(x = YearsWithCurrManager, fill = Attrition)) + geom_density(alpha = 0.5) + ggtitle("Years With Current Manager") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank())
+
+
+grid.arrange(p1, p2, p3, p4, p5, p6 , nrow = 3, ncol = 2)
+```
+# feature selection
+```{r}
+p1 <- IBMclean.df %>%
+  group_by(BusinessTravel) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = BusinessTravel, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Business Travel") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ scale_y_continuous(limits = c(0, 30))
+p2 <- IBMclean.df %>%
+  group_by(EnvironmentSatisfaction) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = EnvironmentSatisfaction, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Environment Satisfaction") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ scale_y_continuous(limits = c(0, 30))
+
+p3 <- IBMclean.df %>%
+  group_by(JobInvolvement) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = JobInvolvement, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Job Involvement") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ scale_y_continuous(limits = c(0, 40))
+
+p4 <- IBMclean.df %>%
+  group_by(JobSatisfaction) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = JobSatisfaction, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Job Satisfaction") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ scale_y_continuous(limits = c(0, 30))
+
+p5 <- IBMclean.df %>%
+  group_by(OverTime) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = OverTime, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Over Time") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)+ scale_y_continuous(limits = c(0, 35))
+
+p6 <- IBMclean.df %>%
+  group_by(Department) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = Department, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Department") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)
+
+p7 <- IBMclean.df %>%
+  group_by(JobRole) %>%
+  summarise(attrition_rate = round((sum(if_else(Attrition == "Yes",1,0))/n()*100),2)) %>%
+  ggplot(aes(x = JobRole, y = attrition_rate))+ geom_bar(stat = 'identity',fill = "Blue") + ggtitle("Attrition Rate VS Job Role") + theme(plot.title = element_text(size =10),axis.text.x = element_text(size =7,angle = 45, hjust = 1),axis.title.x=element_blank()) +geom_text(aes(label=attrition_rate), size = 2.5, position=position_dodge(width=0.2), vjust=-0.25)
+
+grid.arrange(p1, p2, p3, p4, p5, p6, p7, nrow = 2, ncol = 4)
+```
+# Attrtion rate is higher with employees who travel more frequently; also with low envirnment satisfaction, low job satisfaction and low job involvement; higher with over time employees, and sales department. 
+
+#According to the histogram, we need to transform the data to be normaly distributed. 
+```{r}
+IBMfinal<- IBMclean.df %>% dplyr::select(
+  MonthlyIncome,
+  Attrition,
+  Age,
+  BusinessTravel,
+  Department,
+  DistanceFromHome,
+  Education,
+  EducationField,
+  EnvironmentSatisfaction,
+  JobInvolvement,
+  JobLevel,
+  JobRole,
+  JobSatisfaction,
+  MaritalStatus,
+  NumCompaniesWorked,
+  OverTime,
+  PercentSalaryHike,
+  RelationshipSatisfaction,
+  StockOptionLevel,
+  TotalWorkingYears,
+  TrainingTimesLastYear,
+  WorkLifeBalance,
+  YearsAtCompany,
+  YearsInCurrentRole,
+  YearsSinceLastPromotion,
+  YearsWithCurrManager,
+)
+
+```
+
+```{r}
+Train <- createDataPartition(IBMfinal$Attrition, p=0.8, list=FALSE)
+training <- IBMfinal[ Train, ]
+testing <- IBMfinal[ -Train, ]
+prop.table(table(IBMfinal$Attrition))
+```
+
+
+```{r}
+train.knn <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 30,
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE
+)
+# KNN on Training Set
+IBMattrition.knn <- train(
+  Attrition ~ .,
+  data = training,
+  method = "knn",
+  metric = "Spec",
+  trControl = train.knn,
+  preProcess = c("center","scale"),
+  tuneLength = 8
+)
+# Adding predictions to Test Data
+predict(IBMattrition.knn, newdata = testing ) -> testing$Attrition_KNN
+# creating confusion matrix
+confusionMatrix(
+  table(testing$Attrition, testing$Attrition_KNN )
+)
+```
+
+
+```{r}
+IBMpred.df<- read.csv("https://raw.githubusercontent.com/BivinSadler/MSDS_6306_Doing-Data-Science/Master/Unit%2014%20and%2015%20Case%20Study%202/CaseStudy2CompSet%20No%20Attrition.csv", sep = ",", header = TRUE)
+head(IBMpred.df)
+str(IBMpred.df)
+IBMpred.df$Education<-factor(IBMpred.df$Education)
+IBMpred.df$EnvironmentSatisfaction<- factor(IBMpred.df$EnvironmentSatisfaction)
+IBMpred.df$JobInvolvement<-factor(IBMpred.df$JobInvolvement)
+IBMpred.df$JobLevel<-factor(IBMpred.df$JobLevel)
+IBMpred.df$JobSatisfaction<-factor(IBMpred.df$JobSatisfaction)
+IBMpred.df$PerformanceRating<-factor(IBMpred.df$PerformanceRating)
+IBMpred.df$RelationshipSatisfaction<- factor(IBMpred.df$RelationshipSatisfaction)
+IBMpred.df$StockOptionLevel<-factor(IBMpred.df$StockOptionLevel)
+IBMpred.df$WorkLifeBalance<- factor(IBMpred.df$WorkLifeBalance)
+
+IBMpred.df$Attrition_KNN <- predict(attrition.knn, IBMpred.df)
+
+IBMpred.df
+```
+
+
+
